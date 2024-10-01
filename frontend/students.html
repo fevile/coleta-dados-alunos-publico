@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Estudantes</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <script>
+    let classes = []; // Variável global para armazenar as classes
+
+    function getCookie(name) {
+      const value = `; ${document.cookie}`;
+      const parts = value.split(`; ${name}=`);
+      if (parts.length === 2) return parts.pop().split(';').shift();
+    }
+
+    window.onload = async function () {
+      const authCookie = getCookie('auth_token');
+      if (!authCookie) {
+        window.location.href = '/login.html';
+      }
+      await loadClasses(); // Carregar as classes antes
+      await loadStudents(); // Carregar os estudantes depois que as classes estão carregadas
+    };
+
+    // Função para carregar escolas e pegar o nome por ID
+    async function getSchoolName(school_id) {
+      const response = await fetch(`https://api.alunos.fevile.com.br/schools/${school_id}`, {
+        headers: {
+          'Authorization': `Bearer ${getCookie('auth_token')}`
+        }
+      });
+
+      if (!response.ok) {
+        console.error(`Erro ao buscar escola ${school_id}`);
+        return 'Escola Desconhecida';
+      }
+
+      const school = await response.json();
+      return school.nome;
+    }
+
+    // Carregar classes e preencher o select concatenando nome da classe com escola
+    async function loadClasses() {
+      const response = await fetch('https://api.alunos.fevile.com.br/classes', {
+        headers: {
+          'Authorization': `Bearer ${getCookie('auth_token')}`
+        }
+      });
+
+      if (!response.ok) {
+        alert('Erro ao carregar classes');
+        return;
+      }
+
+      classes = await response.json(); // Armazena as classes
+
+      const selectClasses = document.getElementById('classeSelect');
+      let optionsHTML = '';
+
+      for (const classe of classes) {
+        const schoolName = await getSchoolName(classe.school_id); // Busca o nome da escola
+        optionsHTML += `<option value="${classe.id}">${classe.nome} - ${schoolName}</option>`;
+      }
+
+      selectClasses.innerHTML = optionsHTML;
+    }
+
+    async function loadStudents() {
+      const response = await fetch('https://api.alunos.fevile.com.br/students', {
+        headers: {
+          'Authorization': `Bearer ${getCookie('auth_token')}`
+        }
+      });
+
+      if (!response.ok) {
+        alert('Erro ao carregar estudantes');
+        return;
+      }
+
+      const students = await response.json();
+      const tableBody = document.getElementById('studentsTableBody');
+      tableBody.innerHTML = students.map(student => `
+    <tr>
+      <td>${student.nome_completo}</td>
+      <td>${formatDate(student.data_nascimento)}</td> <!-- Corrigindo a exibição da data -->
+      <td>${student.sexo}</td>
+      <td>${student.atr}</td>
+      <td>${getClassNameById(student.class_id)}</td> <!-- Nome da classe associada -->
+      <td>
+        <button class="btn btn-primary btn-sm" onclick="editStudent(${student.id})">Editar</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteStudent(${student.id})">Excluir</button>
+      </td>
+    </tr>
+  `).join('');
+    }
+
+    // Pegar o nome da classe pelo ID
+    function getClassNameById(id) {
+      const classe = classes.find(c => c.id === id);
+      return classe ? classe.nome : 'Desconhecida';
+    }
+
+    // Criar um novo estudante
+    async function createStudent() {
+      const nome_completo = document.getElementById('nome_completo').value;
+      const data_nascimento = document.getElementById('data_nascimento').value;
+      const sexo = document.getElementById('sexo').value;
+      const atr = document.getElementById('atr').value;
+      const class_id = document.getElementById('classeSelect').value;
+
+      const response = await fetch('https://api.alunos.fevile.com.br/students', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${getCookie('auth_token')}`
+        },
+        body: JSON.stringify({ nome_completo, data_nascimento, sexo, atr, class_id })
+      });
+
+      if (response.ok) {
+        await loadStudents();
+        alert('Estudante criado com sucesso');
+      } else {
+        alert('Erro ao criar estudante');
+      }
+    }
+
+
+    // Função para corrigir a data para exibir corretamente
+    function formatDate(dateString) {
+      const date = new Date(dateString);
+      // Como a data pode estar em UTC, tratamos ela como uma data local sem afetar o fuso horário.
+      const year = date.getUTCFullYear();
+      const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(date.getUTCDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+
+    // Editar estudante - carrega os dados no modal
+    async function editStudent(id) {
+      const response = await fetch(`https://api.alunos.fevile.com.br/students/${id}`, {
+        headers: {
+          'Authorization': `Bearer ${getCookie('auth_token')}`
+        }
+      });
+
+      if (response.ok) {
+        const student = await response.json();
+        document.getElementById('editId').value = student.id;
+        document.getElementById('editNomeCompleto').value = student.nome_completo;
+        document.getElementById('editDataNascimento').value = student.data_nascimento.split('T')[0]; // Ajustar para formato de data
+        document.getElementById('editSexo').value = student.sexo;
+        document.getElementById('editAtr').value = student.atr;
+
+        // Preencher o select com as classes e concatenar com escola
+        const editSelectClasses = document.getElementById('editClasseSelect');
+        let optionsHTML = '';
+
+        for (const classe of classes) {
+          const schoolName = await getSchoolName(classe.school_id); // Buscar nome da escola
+          optionsHTML += `<option value="${classe.id}" ${classe.id === student.class_id ? 'selected' : ''}>
+                            ${classe.nome} - ${schoolName}
+                          </option>`;
+        }
+
+        editSelectClasses.innerHTML = optionsHTML;
+
+        const modal = new bootstrap.Modal(document.getElementById('editStudentModal'));
+        modal.show();
+      } else {
+        alert('Erro ao carregar dados do estudante');
+      }
+    }
+
+    // Atualizar o estudante com os dados editados
+    async function updateStudent() {
+      const id = document.getElementById('editId').value;
+      const nome_completo = document.getElementById('editNomeCompleto').value;
+      const data_nascimento = document.getElementById('editDataNascimento').value;
+      const sexo = document.getElementById('editSexo').value;
+      const atr = document.getElementById('editAtr').value;
+      const class_id = document.getElementById('editClasseSelect').value;
+
+      const response = await fetch(`https://api.alunos.fevile.com.br/students/${id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${getCookie('auth_token')}`
+        },
+        body: JSON.stringify({ nome_completo, data_nascimento, sexo, atr, class_id })
+      });
+
+      if (response.ok) {
+        await loadStudents();
+        alert('Estudante atualizado com sucesso');
+      } else {
+        alert('Erro ao atualizar estudante');
+      }
+    }
+
+    // Excluir estudante
+    async function deleteStudent(id) {
+      const response = await fetch(`https://api.alunos.fevile.com.br/students/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${getCookie('auth_token')}`
+        }
+      });
+
+      if (response.ok) {
+        await loadStudents();
+        alert('Estudante excluído com sucesso');
+      } else {
+        alert('Erro ao excluir estudante');
+      }
+    }
+  </script>
+</head>
+
+<body>
+  <!-- Menu de navegação fixo -->
+  <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <div class="container-fluid">
+      <a class="navbar-brand" href="#">Dashboard</a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
+        aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navbarNav">
+        <ul class="navbar-nav ms-auto">
+          <li class="nav-item">
+            <a class="nav-link" href="/escolas.html">Escolas</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/classes.html">Classes</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/coletas.html">Coletas</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/students.html">Estudantes</a>
+          </li>
+          <li class="nav-item">
+            <button class="btn btn-danger" onclick="logout()">Logout</button>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Conteúdo principal -->
+  <div class="container mt-5">
+    <h1>Gerenciar Estudantes</h1>
+
+    <!-- Tabela de estudantes -->
+    <table class="table table-striped">
+      <thead>
+        <tr>
+          <th>Nome Completo</th>
+          <th>Data de Nascimento</th>
+          <th>Sexo</th>
+          <th>ATR</th>
+          <th>Classe</th>
+          <th>Ações</th>
+        </tr>
+      </thead>
+      <tbody id="studentsTableBody">
+        <!-- Os estudantes serão carregados aqui -->
+      </tbody>
+    </table>
+
+    <!-- Formulário de adicionar estudante -->
+    <h3>Adicionar Novo Estudante</h3>
+    <form onsubmit="createStudent(); return false;">
+      <div class="mb-3">
+        <label for="nome_completo" class="form-label">Nome Completo</label>
+        <input type="text" class="form-control" id="nome_completo" required>
+      </div>
+      <div class="mb-3">
+        <label for="data_nascimento" class="form-label">Data de Nascimento</label>
+        <input type="date" class="form-control" id="data_nascimento" required>
+      </div>
+      <div class="mb-3">
+        <label for="sexo" class="form-label">Sexo</label>
+        <select id="sexo" class="form-select" required>
+          <option value="M">Masculino</option>
+          <option value="F">Feminino</option>
+        </select>
+      </div>
+      <div class="mb-3">
+        <label for="atr" class="form-label">ATR</label>
+        <select id="atr" class="form-select" required>
+          <option value="S">Sim</option>
+          <option value="N">Não</option>
+        </select>
+      </div>
+      <div class="mb-3">
+        <label for="classeSelect" class="form-label">Classe</label>
+        <select id="classeSelect" class="form-select" required>
+          <!-- Classes serão carregadas aqui -->
+        </select>
+      </div>
+      <button type="submit" class="btn btn-success">Adicionar Estudante</button>
+    </form>
+  </div>
+
+  <!-- Modal para editar estudante -->
+  <div class="modal fade" id="editStudentModal" tabindex="-1" aria-labelledby="editStudentModalLabel"
+    aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="editStudentModalLabel">Editar Estudante</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <form id="editStudentForm" onsubmit="updateStudent(); return false;">
+            <input type="hidden" id="editId">
+            <div class="mb-3">
+              <label for="editNomeCompleto" class="form-label">Nome Completo</label>
+              <input type="text" class="form-control" id="editNomeCompleto" required>
+            </div>
+            <div class="mb-3">
+              <label for="editDataNascimento" class="form-label">Data de Nascimento</label>
+              <input type="date" class="form-control" id="editDataNascimento" required>
+            </div>
+            <div class="mb-3">
+              <label for="editSexo" class="form-label">Sexo</label>
+              <select id="editSexo" class="form-select" required>
+                <option value="M">Masculino</option>
+                <option value="F">Feminino</option>
+              </select>
+            </div>
+            <div class="mb-3">
+              <label for="editAtr" class="form-label">ATR</label>
+              <select id="editAtr" class="form-select" required>
+                <option value="S">Sim</option>
+                <option value="N">Não</option>
+              </select>
+            </div>
+            <div class="mb-3">
+              <label for="editClasseSelect" class="form-label">Classe</label>
+              <select id="editClasseSelect" class="form-select" required>
+                <!-- Classes serão carregadas aqui -->
+              </select>
+            </div>
+            <button type="submit" class="btn btn-primary">Salvar Alterações</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+
+</html>

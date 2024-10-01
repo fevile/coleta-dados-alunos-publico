@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Coletas</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <script>
+    let students = [];
+    let classes = [];
+
+    // Função para verificar se o usuário está logado
+    function getCookie(name) {
+      const value = `; ${document.cookie}`;
+      const parts = value.split(`; ${name}=`); 
+      if (parts.length === 2) return parts.pop().split(';').shift();
+    }
+
+    window.onload = async function () {
+      const authCookie = getCookie('auth_token');
+      if (!authCookie) {
+        window.location.href = '/login.html';
+      }
+      await loadClasses(); // Carregar as classes antes
+      await loadStudents(); // Carregar os estudantes
+      await loadCollections(); // Carregar coletas
+    };
+
+    // Carregar classes
+    async function loadClasses() {
+      const response = await fetch('https://api.alunos.fevile.com.br/classes', {
+        headers: {
+          'Authorization': `Bearer ${getCookie('auth_token')}`
+        }
+      });
+
+      if (!response.ok) {
+        alert('Erro ao carregar classes');
+        return;
+      }
+
+      classes = await response.json();
+      const selectClasses = document.getElementById('classSelect');
+      const editSelectClasses = document.getElementById('editClassSelect');
+
+      selectClasses.innerHTML = classes.map(classe => `
+        <option value="${classe.id}">${classe.nome}</option>
+      `).join('');
+
+      editSelectClasses.innerHTML = classes.map(classe => `
+        <option value="${classe.id}">${classe.nome}</option>
+      `).join('');
+    }
+
+    // Carregar estudantes
+    async function loadStudents() {
+      const response = await fetch('https://api.alunos.fevile.com.br/students', {
+        headers: {
+          'Authorization': `Bearer ${getCookie('auth_token')}`
+        }
+      });
+
+      if (!response.ok) {
+        alert('Erro ao carregar estudantes');
+        return;
+      }
+
+      students = await response.json();
+      const selectStudents = document.getElementById('studentSelect');
+      const editSelectStudents = document.getElementById('editStudentSelect');
+
+      selectStudents.innerHTML = students.map(student => `
+        <option value="${student.id}">${student.nome_completo}</option>
+      `).join('');
+
+      editSelectStudents.innerHTML = students.map(student => `
+        <option value="${student.id}">${student.nome_completo}</option>
+      `).join('');
+    }
+
+    // Carregar coletas e exibir na tabela
+    async function loadCollections() {
+      const response = await fetch('https://api.alunos.fevile.com.br/collections/search?data_coleta=2023-09-30&id_class=1', {
+        headers: {
+          'Authorization': `Bearer ${getCookie('auth_token')}`
+        }
+      });
+
+      if (!response.ok) {
+        alert('Erro ao carregar coletas');
+        return;
+      }
+
+      const collections = await response.json();
+      const tableBody = document.getElementById('collectionsTableBody');
+      tableBody.innerHTML = collections.map(collection => `
+        <tr>
+          <td>${collection.nome_completo}</td>
+          <td>${collection.data_coleta}</td>
+          <td>${collection.peso1}</td>
+          <td>${collection.altura1}</td>
+          <td>${collection.peso2}</td>
+          <td>${collection.altura2}</td>
+          <td>
+            <button class="btn btn-primary btn-sm" onclick="editCollection(${collection.id})">Editar</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteCollection(${collection.id})">Excluir</button>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    // Criar uma nova coleta
+    async function createCollection() {
+      const id_student = document.getElementById('studentSelect').value;
+      const class_id = document.getElementById('classSelect').value;
+      const data_coleta = document.getElementById('data_coleta').value;
+      const peso1 = document.getElementById('peso1').value;
+      const altura1 = document.getElementById('altura1').value;
+      const peso2 = document.getElementById('peso2').value;
+      const altura2 = document.getElementById('altura2').value;
+
+      const response = await fetch('https://api.alunos.fevile.com.br/collections', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${getCookie('auth_token')}`
+        },
+        body: JSON.stringify({ id_student, class_id, data_coleta, peso1, altura1, peso2, altura2 })
+      });
+
+      if (response.ok) {
+        await loadCollections();
+        alert('Coleta criada com sucesso');
+      } else {
+        alert('Erro ao criar coleta');
+      }
+    }
+
+    // Editar coleta - carrega os dados no modal
+    async function editCollection(id) {
+      const response = await fetch(`https://api.alunos.fevile.com.br/collections/${id}`, {
+        headers: {
+          'Authorization': `Bearer ${getCookie('auth_token')}`
+        }
+      });
+
+      if (response.ok) {
+        const collection = await response.json();
+        document.getElementById('editId').value = collection.id;
+        document.getElementById('editStudentSelect').value = collection.id_student;
+        document.getElementById('editClassSelect').value = collection.class_id;
+        document.getElementById('editDataColeta').value = collection.data_coleta;
+        document.getElementById('editPeso1').value = collection.peso1;
+        document.getElementById('editAltura1').value = collection.altura1;
+        document.getElementById('editPeso2').value = collection.peso2;
+        document.getElementById('editAltura2').value = collection.altura2;
+
+        const modal = new bootstrap.Modal(document.getElementById('editCollectionModal'));
+        modal.show();
+      } else {
+        alert('Erro ao carregar dados da coleta');
+      }
+    }
+
+    // Atualizar a coleta
+    async function updateCollection() {
+      const id = document.getElementById('editId').value;
+      const id_student = document.getElementById('editStudentSelect').value;
+      const class_id = document.getElementById('editClassSelect').value;
+      const data_coleta = document.getElementById('editDataColeta').value;
+      const peso1 = document.getElementById('editPeso1').value;
+      const altura1 = document.getElementById('editAltura1').value;
+      const peso2 = document.getElementById('editPeso2').value;
+      const altura2 = document.getElementById('editAltura2').value;
+
+      const response = await fetch(`https://api.alunos.fevile.com.br/collections/${id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${getCookie('auth_token')}`
+        },
+        body: JSON.stringify({ id_student, class_id, data_coleta, peso1, altura1, peso2, altura2 })
+      });
+
+      if (response.ok) {
+        await loadCollections();
+        alert('Coleta atualizada com sucesso');
+      } else {
+        alert('Erro ao atualizar coleta');
+      }
+    }
+
+    // Excluir coleta
+    async function deleteCollection(id) {
+      const response = await fetch(`https://api.alunos.fevile.com.br/collections/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${getCookie('auth_token')}`
+        }
+      });
+
+      if (response.ok) {
+        await loadCollections();
+        alert('Coleta excluída com sucesso');
+      } else {
+        alert('Erro ao excluir coleta');
+      }
+    }
+  </script>
+</head>
+<body>
+  <!-- Menu de navegação fixo -->
+  <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <div class="container-fluid">
+      <a class="navbar-brand" href="#">Dashboard</a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navbarNav">
+        <ul class="navbar-nav ms-auto">
+          <li class="nav-item">
+            <a class="nav-link" href="/escolas.html">Escolas</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/classes.html">Classes</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/students.html">Estudantes</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/coletas.html">Coletas</a>
+          </li>
+          <li class="nav-item">
+            <button class="btn btn-danger" onclick="logout()">Logout</button>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Conteúdo principal -->
+  <div class="container mt-5">
+    <h1>Gerenciar Coletas</h1>
+
+    <!-- Tabela de coletas -->
+    <table class="table table-striped">
+      <thead>
+        <tr>
+          <th>Estudante</th>
+          <th>Data da Coleta</th>
+          <th>Peso 1</th>
+          <th>Altura 1</th>
+          <th>Peso 2</th>
+          <th>Altura 2</th>
+          <th>Ações</th>
+        </tr>
+      </thead>
+      <tbody id="collectionsTableBody">
+        <!-- As coletas serão carregadas aqui -->
+      </tbody>
+    </table>
+
+    <!-- Formulário de adicionar coleta -->
+    <h3>Adicionar Nova Coleta</h3>
+    <form onsubmit="createCollection(); return false;">
+      <div class="mb-3">
+        <label for="studentSelect" class="form-label">Estudante</label>
+        <select id="studentSelect" class="form-select" required>
+          <!-- Estudantes serão carregados aqui -->
+        </select>
+      </div>
+      <div class="mb-3">
+        <label for="classSelect" class="form-label">Classe</label>
+        <select id="classSelect" class="form-select" required>
+          <!-- Classes serão carregadas aqui -->
+        </select>
+      </div>
+      <div class="mb-3">
+        <label for="data_coleta" class="form-label">Data da Coleta</label>
+        <input type="date" class="form-control" id="data_coleta" required>
+      </div>
+      <div class="mb-3">
+        <label for="peso1" class="form-label">Peso 1</label>
+        <input type="number" class="form-control" id="peso1" required>
+      </div>
+      <div class="mb-3">
+        <label for="altura1" class="form-label">Altura 1</label>
+        <input type="number" class="form-control" id="altura1" required>
+      </div>
+      <div class="mb-3">
+        <label for="peso2" class="form-label">Peso 2</label>
+        <input type="number" class="form-control" id="peso2" required>
+      </div>
+      <div class="mb-3">
+        <label for="altura2" class="form-label">Altura 2</label>
+        <input type="number" class="form-control" id="altura2" required>
+      </div>
+      <button type="submit" class="btn btn-success">Adicionar Coleta</button>
+    </form>
+  </div>
+
+  <!-- Modal para editar coleta -->
+  <div class="modal fade" id="editCollectionModal" tabindex="-1" aria-labelledby="editCollectionModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="editCollectionModalLabel">Editar Coleta</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <form id="editCollectionForm" onsubmit="updateCollection(); return false;">
+            <input type="hidden" id="editId">
+            <div class="mb-3">
+              <label for="editStudentSelect" class="form-label">Estudante</label>
+              <select id="editStudentSelect" class="form-select" required>
+                <!-- Estudantes serão carregados aqui -->
+              </select>
+            </div>
+            <div class="mb-3">
+              <label for="editClassSelect" class="form-label">Classe</label>
+              <select id="editClassSelect" class="form-select" required>
+                <!-- Classes serão carregadas aqui -->
+              </select>
+            </div>
+            <div class="mb-3">
+              <label for="editDataColeta" class="form-label">Data da Coleta</label>
+              <input type="date" class="form-control" id="editDataColeta" required>
+            </div>
+            <div class="mb-3">
+              <label for="editPeso1" class="form-label">Peso 1</label>
+              <input type="number" class="form-control" id="editPeso1" required>
+            </div>
+            <div class="mb-3">
+              <label for="editAltura1" class="form-label">Altura 1</label>
+              <input type="number" class="form-control" id="editAltura1" required>
+            </div>
+            <div class="mb-3">
+              <label for="editPeso2" class="form-label">Peso 2</label>
+              <input type="number" class="form-control" id="editPeso2" required>
+            </div>
+            <div class="mb-3">
+              <label for="editAltura2" class="form-label">Altura 2</label>
+              <input type="number" class="form-control" id="editAltura2" required>
+            </div>
+            <button type="submit" class="btn btn-primary">Salvar Alterações</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
